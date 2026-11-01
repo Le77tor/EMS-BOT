@@ -1,0 +1,23 @@
+{
+  "name": "@majestic/bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "node build.js",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@majestic/database": "*",
+    "@majestic/shared": "*",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
