@@ -1,0 +1,620 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// User Management
+// ==========================================
+
+model User {
+  id            String    @id @default(cuid())
+  discordId     String    @unique
+  username      String
+  displayName   String?   // Discord global_name (отображаемое имя)
+  discriminator String
+  avatar        String?
+  email         String?
+  
+  role          UserRole  @default(MEMBER)
+  status        UserStatus @default(ACTIVE)
+  discordRoles  Json?     // Массив Discord ролей { id, name, color }
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+  
+  // Relations
+  accounts      Account[]
+  sessions      Session[]
+  applications  Application[]
+  submissions   Submission[]
+  auditLogs     AuditLog[]
+  hrStats       HRStats[]
+  tests         Test[]
+  testAttempts  TestAttempt[]
+  warnings      Warning[]
+  
+  @@map("users")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  HR_MANAGER
+  HR_STAFF
+  MODERATOR
+  MEMBER
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+  INACTIVE
+}
+
+// NextAuth.js required models
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ==========================================
+// Applications & Recruitment
+// ==========================================
+
+model Application {
+  id                String            @id @default(cuid())
+  userId            String
+  type              ApplicationType
+  status            ApplicationStatus @default(PENDING)
+  
+  // Form data (для старых типов: STAFF, PROMOTION, TRANSFER)
+  position          String?
+  experience        String?           @db.Text
+  motivation        String?           @db.Text
+  references        String?           @db.Text
+  
+  // JSON data (для новых типов: VACATION и других)
+  data              Json?
+  
+  // Discord Integration
+  discordMessageId  String?           // ID сообщения в Discord канале
+  
+  // Review
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  reviewNote        String?           @db.Text
+  
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([status])
+  @@map("applications")
+}
+
+enum ApplicationType {
+  STAFF
+  PROMOTION
+  TRANSFER
+  VACATION
+  RESIGNATION
+}
+
+enum ApplicationStatus {
+  PENDING
+  REVIEWED
+  APPROVED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
+// ==========================================
+// Warnings System
+// ==========================================
+
+model Warning {
+  id          String        @id @default(cuid())
+  userId      String
+  
+  reason      String        @db.Text
+  severity    WarningSeverity @default(MINOR)
+  status      WarningStatus @default(ACTIVE)
+  
+  issuedBy    String
+  issuedAt    DateTime      @default(now())
+  
+  expiresAt   DateTime?
+  removedBy   String?
+  removedAt   DateTime?
+  removeReason String?      @db.Text
+  
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  
+  user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([status])
+  @@map("warnings")
+}
+
+enum WarningSeverity {
+  MINOR
+  MODERATE
+  SEVERE
+}
+
+enum WarningStatus {
+  ACTIVE
+  EXPIRED
+  REMOVED
+}
+
+// ==========================================
+// HR Statistics
+// ==========================================
+
+model HRStats {
+  id              String   @id @default(cuid())
+  userId          String
+  
+  // Weekly stats
+  weekNumber      Int
+  year            Int
+  
+  // Metrics
+  interviews      Int      @default(0)
+  hires           Int      @default(0)
+  promotions      Int      @default(0)
+  warnings        Int      @default(0)
+  fires           Int      @default(0)
+  trainings       Int      @default(0)
+  
+  // Performance
+  score           Float    @default(0)
+  notes           String?  @db.Text
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@unique([userId, weekNumber, year])
+  @@index([weekNumber, year])
+  @@map("hr_stats")
+}
+
+// ==========================================
+// Content Management
+// ==========================================
+
+model Post {
+  id          String      @id @default(cuid())
+  slug        String      @unique
+  title       String
+  excerpt     String?     @db.Text
+  content     String      @db.LongText
+  
+  status      PostStatus  @default(DRAFT)
+  type        PostType    @default(ARTICLE)
+  
+  authorId    String
+  categoryId  String?
+  
+  views       Int         @default(0)
+  featured    Boolean     @default(false)
+  
+  publishedAt DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  category    Category?   @relation(fields: [categoryId], references: [id])
+  
+  @@index([slug])
+  @@index([status])
+  @@map("posts")
+}
+
+enum PostStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum PostType {
+  ARTICLE
+  NEWS
+  ANNOUNCEMENT
+  GUIDE
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  description String?  @db.Text
+  
+  posts       Post[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("categories")
+}
+
+// ==========================================
+// Testing System
+// ==========================================
+
+model Test {
+  id                    String      @id @default(cuid())
+  title                 String
+  description           String?     @db.Text
+  
+  status                TestStatus  @default(DRAFT)
+  
+  // Доступ (null = все отделы, или JSON массив с ID ролей Discord)
+  accessRoles           Json?       // ["role_id_1", "role_id_2"] или null для всех
+  
+  // Настройки прохождения
+  passingScore          Float       @default(70)       // % для успешной сдачи
+  timeLimit             Int?                           // Время на весь тест в минутах
+  questionsPerAttempt   Int?                           // Сколько вопросов показывать (null = все)
+  retryDelay            Int         @default(0)        // Пауза между попытками в минутах (0 = нет паузы)
+  
+  // Настройки отображения
+  shuffleQuestions      Boolean     @default(false)    // Перемешивать вопросы
+  shuffleAnswers        Boolean     @default(false)    // Миксовать ответы
+  showReview            Boolean     @default(false)    // Показывать разбор после завершения
+  
+  createdBy             String
+  publishedAt           DateTime?
+  
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+  
+  creator               User        @relation(fields: [createdBy], references: [id])
+  questions             Question[]
+  attempts              TestAttempt[]
+  
+  @@map("tests")
+}
+
+enum TestStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model Question {
+  id              String         @id @default(cuid())
+  testId          String
+  
+  question        String         @db.Text
+  type            QuestionType   @default(MULTIPLE_CHOICE)
+  
+  // Варианты ответов: [{ text: "Вариант 1", isCorrect: true }, ...]
+  options         Json
+  
+  // Объяснение правильного ответа (опционально)
+  explanation     String?        @db.Text
+  
+  points          Int            @default(1)
+  order           Int            @default(0)
+  
+  test            Test           @relation(fields: [testId], references: [id], onDelete: Cascade)
+  
+  @@index([testId])
+  @@map("questions")
+}
+
+enum QuestionType {
+  MULTIPLE_CHOICE  // Один правильный ответ
+  MULTIPLE_SELECT  // Несколько правильных ответов
+}
+
+model TestAttempt {
+  id              String   @id @default(cuid())
+  testId          String
+  userId          String
+  
+  // Ответы пользователя: [{ questionId: "xxx", selectedOptions: [0, 2] }, ...]
+  answers         Json
+  
+  // Результаты
+  score           Float            // % правильных ответов
+  passed          Boolean          // Сдан или нет
+  correctAnswers  Int    @default(0)  // Количество правильных ответов
+  totalQuestions  Int    @default(0)  // Всего вопросов в попытке
+  
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  
+  test            Test     @relation(fields: [testId], references: [id])
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([testId])
+  @@index([userId])
+  @@index([completedAt])
+  @@map("test_attempts")
+}
+
+// ==========================================
+// Discord Integration
+// ==========================================
+
+model DiscordChannel {
+  id          String   @id // Discord channel ID
+  guildId     String
+  name        String
+  type        String
+  
+  // Purpose tracking
+  purpose     String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("discord_channels")
+}
+
+model DiscordRole {
+  id          String   @id // Discord role ID
+  guildId     String
+  name        String
+  color       Int
+  position    Int
+  
+  permissions String
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("discord_roles")
+}
+
+// ==========================================
+// Submissions & Reports
+// ==========================================
+
+model Submission {
+  id          String           @id @default(cuid())
+  userId      String
+  type        SubmissionType
+  status      SubmissionStatus @default(PENDING)
+  
+  title       String
+  content     String           @db.LongText
+  attachments Json?
+  
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  feedback    String?          @db.Text
+  
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@index([status])
+  @@map("submissions")
+}
+
+enum SubmissionType {
+  WEEKLY_REPORT
+  INCIDENT_REPORT
+  FEEDBACK
+  OTHER
+}
+
+enum SubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REVISION_NEEDED
+}
+
+// ==========================================
+// Audit & Logging
+// ==========================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String
+  resource    String
+  resourceId  String?
+  
+  details     Json?
+  ipAddress   String?
+  userAgent   String?  @db.Text
+  
+  createdAt   DateTime @default(now())
+  
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ==========================================
+// Blacklist Removal Applications
+// ==========================================
+
+model BlacklistRemoval {
+  id                String                    @id @default(cuid())
+  
+  // Applicant info
+  firstName         String
+  lastName          String
+  static            String
+  discordId         String
+  
+  // Reasons
+  blacklistReason   String                    @db.Text
+  removalReason     String                    @db.Text
+  
+  // Status
+  status            BlacklistRemovalStatus    @default(PENDING)
+  sentToDiscord     Boolean                   @default(false)
+  discordMessageId  String?                   // ID сообщения в Discord
+  
+  // Review
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  reviewNote        String?                   @db.Text
+  processedAt       DateTime?                 // Дата финального решения
+  
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  
+  @@index([status])
+  @@index([sentToDiscord])
+  @@index([discordId])
+  @@map("blacklist_removals")
+}
+
+enum BlacklistRemovalStatus {
+  PENDING
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+// ==========================================
+// Blacklist Removal Blocks
+// ==========================================
+
+model BlacklistRemovalBlock {
+  id          String   @id @default(cuid())
+  
+  // Block info
+  static      String   @unique  // Статик заблокированного
+  reason      String?  @db.Text // Причина блокировки
+  
+  // Who blocked
+  blockedBy   String   // Discord ID
+  blockedAt   DateTime @default(now())
+  
+  // If unblocked
+  isActive    Boolean  @default(true)
+  unblockedBy String?
+  unblockedAt DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@index([static])
+  @@index([isActive])
+  @@map("blacklist_removal_blocks")
+}
+
+// ==========================================
+// Employment Applications
+// ==========================================
+
+model EmploymentApplication {
+  id                String                    @id @default(cuid())
+  
+  // Applicant info
+  firstName         String
+  lastName          String
+  static            String
+  discordId         String
+  
+  // Application details
+  reason            String                    @db.Text
+  
+  // Status
+  status            EmploymentStatus          @default(PENDING)
+  sentToDiscord     Boolean                   @default(false)
+  userJoinedGuild   Boolean                   @default(false) // Пользователь присоединился к серверу
+  discordChannelId  String?                   // ID созданного канала
+  
+  // Review
+  reviewedBy        String?
+  reviewedAt        DateTime?
+  reviewNote        String?                   @db.Text
+  processedAt       DateTime?                 // Дата финального решения
+  
+  createdAt         DateTime                  @default(now())
+  updatedAt         DateTime                  @updatedAt
+  
+  @@index([status])
+  @@index([sentToDiscord])
+  @@index([discordId])
+  @@map("employment_applications")
+}
+
+enum EmploymentStatus {
+  PENDING
+  IN_REVIEW
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+// ==========================================
+// System Configuration
+// ==========================================
+
+model Config {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  value       Json
+  description String?  @db.Text
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("config")
+}

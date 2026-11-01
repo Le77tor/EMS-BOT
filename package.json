@@ -1,0 +1,38 @@
+{
+  "name": "majestic-cms",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Modern CMS with Next.js and Discord Bot integration",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "turbo run dev",
+    "postinstall": "prisma generate --schema=./packages/database/prisma/schema.prisma",
+    "build": "turbo run build && cd apps/bot && npm run build && cd ../.. && npm run postbuild",
+    "postbuild": "cp -r apps/web/.next .next || xcopy /E /I /Y apps\\web\\.next .next",
+    "start": "node server.js",
+    "lint": "turbo run lint",
+    "clean": "turbo run clean && rm -rf node_modules",
+    "db:generate": "turbo run db:generate",
+    "db:push": "turbo run db:push",
+    "db:migrate": "turbo run db:migrate",
+    "db:studio": "cd packages/database && npm run db:studio"
+  },
+  "dependencies": {
+    "@prisma/client": "6.19.3",
+    "next": "15.5.28",
+    "turbo": "^2.3.0",
+    "prisma": "6.19.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "@types/node": "^22.9.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "packageManager": "npm@10.9.2"
+}
